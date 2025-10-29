@@ -3,10 +3,6 @@ import sqlite3
 import pandas as pd
 from pathlib import Path
 
-# ================== Nastavení aplikace ==================
-st.set_page_config(page_title="Půjčovna strojů", page_icon="🛠️", layout="centered")
-st.write("🔧 Spouštím aplikaci...")
-
 # ================== Databáze ==================
 DB_DIR = Path.home() / ".pujcovna_data"
 DB_DIR.mkdir(parents=True, exist_ok=True)
