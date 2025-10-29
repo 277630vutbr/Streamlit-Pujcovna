@@ -1,10 +1,10 @@
 import sqlite3
 
-# Připojení (nebo vytvoření) databáze
+# Připojení nebo vytvoření databáze
 conn = sqlite3.connect("pujcovna.db")
 cursor = conn.cursor()
 
-# Vytvoření tabulky klientů
+# ===== Vytvoření tabulek =====
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS klienti (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS klienti (
 )
 """)
 
-# Vytvoření tabulky strojů (bez popisu)
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS stroje (
     id TEXT PRIMARY KEY,
@@ -25,11 +24,11 @@ CREATE TABLE IF NOT EXISTS stroje (
 )
 """)
 
-# Vyčištění starých dat
+# ===== Vyčištění starých dat =====
 cursor.execute("DELETE FROM klienti")
 cursor.execute("DELETE FROM stroje")
 
-# Vložení klientů
+# ===== Vložení klientů =====
 klienti = [
     ("BetonSy", "Svitavy, Poličská 58", "51216312", 7, "Jan Novák"),
     ("Stavmont s.r.o.", "Brno, Lidická 58", "12345678", 10, "Michal Malý"),
@@ -37,7 +36,7 @@ klienti = [
 ]
 cursor.executemany("INSERT INTO klienti VALUES (NULL, ?, ?, ?, ?, ?)", klienti)
 
-# Vložení strojů (bez popisu)
+# ===== Vložení strojů =====
 stroje = [
     ("ST001", "Kladivo AKU vrtací 4 kg NURON", 363.00),
     ("ST002", "Svářečka polyfúzní průměr 20–63 mm", 278.30),
@@ -57,7 +56,8 @@ stroje = [
 ]
 cursor.executemany("INSERT INTO stroje VALUES (?, ?, ?)", stroje)
 
+# ===== Uložení a zavření =====
 conn.commit()
 conn.close()
 
-print("✅ Databáze byla vytvořena a naplněna daty.")
+print("✅ Databáze 'pujcovna.db' byla vytvořena a naplněna daty.")
