@@ -5,33 +5,43 @@ from pathlib import Path
 
 st.set_page_config(page_title="Půjčovna strojů", page_icon="🛠️", layout="centered")
 
-# ============ KAM ULOŽIT DB (funguje na Streamlit Cloud) ============
+# ================= DB: stabilní nastavení =================
 DB_DIR = Path.home() / ".pujcovna_data"
 DB_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DB_DIR / "pujcovna.db"
 
-# ============ VYTVOŘ DB + DATA, POKUD CHYBÍ ============
-def ensure_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    c = conn.cursor()
+@st.cache_resource(show_spinner=False)
+def get_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(
+        str(DB_PATH),
+        check_same_thread=False,  # sdílení spojení přes vlákna
+        timeout=30                # vyčkej, když je DB zamčená
+    )
+    cur = conn.cursor()
+    cur.execute("PRAGMA journal_mode=WAL;")     # stabilnější paralelní přístup
+    cur.execute("PRAGMA synchronous=NORMAL;")
+    cur.execute("PRAGMA busy_timeout=30000;")   # 30 s
+    conn.commit()
+    return conn
 
+def ensure_db(conn: sqlite3.Connection) -> None:
+    c = conn.cursor()
     c.execute("""
     CREATE TABLE IF NOT EXISTS klienti (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      nazev_firmy TEXT,
-      adresa TEXT,
-      ico TEXT,
-      sleva REAL,
-      kontakt TEXT
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nazev_firmy TEXT,
+        adresa TEXT,
+        ico TEXT,
+        sleva REAL,
+        kontakt TEXT
     )""")
     c.execute("""
     CREATE TABLE IF NOT EXISTS stroje (
-      id TEXT PRIMARY KEY,
-      nazev TEXT,
-      cena_den REAL
+        id TEXT PRIMARY KEY,
+        nazev TEXT,
+        cena_den REAL
     )""")
-
-    # Klienti
+    # seed jen když prázdné
     c.execute("SELECT COUNT(*) FROM klienti")
     if c.fetchone()[0] == 0:
         c.executemany("INSERT INTO klienti VALUES (NULL, ?, ?, ?, ?, ?)", [
@@ -39,8 +49,6 @@ def ensure_db():
             ("Stavmont s.r.o.", "Brno, Lidická 58", "12345678", 10, "Michal Malý"),
             ("BetonBau a.s.", "Praha, K Hájům 22", "87654321", 5, "Alena Nová"),
         ])
-
-    # Stroje
     c.execute("SELECT COUNT(*) FROM stroje")
     if c.fetchone()[0] == 0:
         c.executemany("INSERT INTO stroje VALUES (?, ?, ?)", [
@@ -60,31 +68,23 @@ def ensure_db():
             ("ST014", "Minirypadlo 1 t BOBCAT E10z LH", 2783.00),
             ("ST015", "Vrták zemní benzínový STIHL BT 131", 907.50),
         ])
-
     conn.commit()
-    conn.close()
 
 def safe_read_sql(sql: str) -> pd.DataFrame:
-    """SELECT s pojistkou: když tabulka chybí/DB je prázdná, vytvoř a zkus znovu."""
+    conn = get_conn()
     try:
-        conn = sqlite3.connect(str(DB_PATH))
-        df = pd.read_sql_query(sql, conn)
-        conn.close()
-        return df
+        return pd.read_sql_query(sql, conn)
     except sqlite3.OperationalError:
-        ensure_db()
-        conn = sqlite3.connect(str(DB_PATH))
-        df = pd.read_sql_query(sql, conn)
-        conn.close()
-        return df
+        ensure_db(conn)
+        return pd.read_sql_query(sql, conn)
 
-# Vytvoř DB při startu
-ensure_db()
+# Init DB jednou při startu
+ensure_db(get_conn())
 
-# ============ JEMNÉ STYLY (bez replit hacků) ============
+# ================= UI STYLY =================
 st.markdown("""
 <style>
-/* dark inputs */
+/* Dark inputy */
 input, textarea {
   background:#151515 !important; color:#f5f5f5 !important;
   border-radius:10px !important; border:1px solid #333 !important;
@@ -93,7 +93,8 @@ div[data-testid="stNumberInput"] input {
   background:#151515 !important; color:#f5f5f5 !important;
   border:1px solid #333 !important; font-weight:600 !important;
 }
-/* select/multiselect */
+
+/* Select / Multiselect */
 .stMultiSelect div[data-baseweb="select"] > div,
 .stSelectbox   div[data-baseweb="select"] > div {
   background:#151515 !important; color:#f5f5f5 !important;
@@ -101,7 +102,8 @@ div[data-testid="stNumberInput"] input {
 }
 .stMultiSelect div[data-baseweb="select"] span,
 .stSelectbox   div[data-baseweb="select"] span { color:#f5f5f5 !important; }
-/* tagy v multiselectu – tyrkys */
+
+/* TAGY v multiselectu – tyrkys (žádná červená) */
 .stApp .stMultiSelect div[data-baseweb="tag"]{
   background:#06b6d4 !important; color:#ffffff !important;
   border:0 !important; border-radius:10px !important;
@@ -110,7 +112,8 @@ div[data-testid="stNumberInput"] input {
 .stApp .stMultiSelect div[data-baseweb="tag"]:hover{ background:#22d3ee !important; }
 .stApp .stMultiSelect div[data-baseweb="tag"] svg,
 .stApp .stMultiSelect div[data-baseweb="tag"] path{ fill:#ffffff !important; color:#ffffff !important; }
-/* metriky */
+
+/* Metriky – jemné orámování */
 [data-testid="stMetric"]{
   background:rgba(255,255,255,.06);
   border:1px solid rgba(255,255,255,.12);
@@ -119,18 +122,17 @@ div[data-testid="stNumberInput"] input {
 </style>
 """, unsafe_allow_html=True)
 
-# ============ DB LOADERY ============
+# ================= DATA LOADERY =================
 def nacti_klienty() -> pd.DataFrame:
     return safe_read_sql("SELECT * FROM klienti")
 
 def nacti_stroje() -> pd.DataFrame:
     return safe_read_sql("SELECT * FROM stroje")
 
-# ============ DATA ============
 klienti = nacti_klienty()
 stroje  = nacti_stroje()
 
-# ============ UI ============
+# ================= APLIKACE =================
 st.title("🛠️ Půjčovna strojů")
 st.caption("Vyber klienta a stroje pro rychlý výpočet ceny pronájmu.")
 
@@ -164,12 +166,15 @@ if vybrane_stroje:
         st.divider()
 
     if st.button("💰 Spočítat celkovou cenu", use_container_width=True):
-        celkova = sum(float(stroje.loc[stroje["nazev"] == s, "cena_den"].values[0]) * dny
-                      for s, dny in dny_dict.items())
+        celkova = sum(
+            float(stroje.loc[stroje["nazev"] == s, "cena_den"].values[0]) * dny
+            for s, dny in dny_dict.items()
+        )
         po_sleve = celkova * (1 - sleva/100)
-
         c1, c2 = st.columns(2)
         with c1: st.metric("💵 Cena bez slevy", f"{celkova:,.2f} Kč")
-        with c2: st.metric("✅ Cena se slevou", f"{po_sleve:,.2f} Kč", delta=f"-{celkova - po_sleve:,.2f} Kč")
+        with c2: st.metric("✅ Cena se slevou",
+                           f"{po_sleve:,.2f} Kč",
+                           delta=f"-{celkova - po_sleve:,.2f} Kč")
 else:
     st.info("👆 Vyber alespoň jeden stroj pro výpočet ceny pronájmu.")
