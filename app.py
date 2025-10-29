@@ -4,7 +4,7 @@ import pandas as pd
 
 st.set_page_config(page_title="Půjčovna strojů", page_icon="🛠️", layout="centered")
 
-# ====== Funkce pro práci s databází ======
+# ===== Funkce pro načtení dat =====
 def nacti_klienty():
     conn = sqlite3.connect("pujcovna.db")
     df = pd.read_sql_query("SELECT * FROM klienti", conn)
@@ -17,15 +17,15 @@ def nacti_stroje():
     conn.close()
     return df
 
-# ====== Načtení dat ======
+# ===== Načtení dat =====
 klienti = nacti_klienty()
 stroje = nacti_stroje()
 
-# ====== Hlavní část aplikace ======
+# ===== Hlavní aplikace =====
 st.title("🛠️ Půjčovna strojů")
-st.markdown("### Vypočítej cenu půjčovného jednoduše podle vybraných strojů.")
+st.markdown("Vyber klienta a stroje pro výpočet ceny půjčovného.")
 
-# Výběr klienta (sleva se použije interně, ale nezobrazí)
+# Výběr klienta (sleva se použije interně, ale není zobrazena)
 klient = st.selectbox("Vyber klienta", klienti["nazev_firmy"])
 sleva = float(klienti.loc[klienti["nazev_firmy"] == klient, "sleva"].values[0])
 
@@ -38,10 +38,9 @@ vybrane_stroje = st.multiselect(
     help="Můžeš vybrat více strojů najednou."
 )
 
-# ====== Dynamické zadávání počtu dní ======
+# Zadání dní pro každý stroj zvlášť
 if vybrane_stroje:
     st.subheader("⏱️ Délka pronájmu pro jednotlivé stroje:")
-
     dny_dict = {}
     for stroj in vybrane_stroje:
         cena = float(stroje.loc[stroje["nazev"] == stroj, "cena_den"].values[0])
@@ -53,7 +52,6 @@ if vybrane_stroje:
                 f"Dny pro {stroj}", min_value=1, max_value=365, value=1, key=stroj
             )
 
-    # ====== Výpočet ======
     st.markdown("---")
     if st.button("💰 Spočítat cenu"):
         celkova_cena = 0
@@ -62,7 +60,6 @@ if vybrane_stroje:
             celkova_cena += cena_den * dny
 
         cena_po_sleve = celkova_cena * (1 - sleva / 100)
-
         st.success(f"💵 **Cena bez slevy:** {celkova_cena:,.2f} Kč")
         st.success(f"✅ **Celková cena po slevě klienta:** {cena_po_sleve:,.2f} Kč")
 
