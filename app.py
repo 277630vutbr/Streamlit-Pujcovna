@@ -5,12 +5,12 @@ from pathlib import Path
 
 st.set_page_config(page_title="Půjčovna strojů", page_icon="🛠️", layout="centered")
 
-# ====== CESTA K DB ======
+# ================== CESTA K DB ==================
 DB_PATH = Path(__file__).parent / "pujcovna.db"
 
-# ====== AUTOVYTVOŘENÍ DB ======
+# ================== AUTOVYTVOŘENÍ DB ==================
 def ensure_db():
-    """Vytvoří databázi a naplní ji daty, pokud chybí tabulky nebo jsou prázdné."""
+    """Vytvoří soubor DB + tabulky a naplní je daty (jen pokud chybí)."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
@@ -23,17 +23,15 @@ def ensure_db():
         ico TEXT,
         sleva REAL,
         kontakt TEXT
-    )
-    """)
+    )""")
     c.execute("""
     CREATE TABLE IF NOT EXISTS stroje (
         id TEXT PRIMARY KEY,
         nazev TEXT,
         cena_den REAL
-    )
-    """)
+    )""")
 
-    # Klienti – jen když je prázdno
+    # Naplnění klientů (pouze při prázdné tabulce)
     c.execute("SELECT COUNT(*) FROM klienti")
     if c.fetchone()[0] == 0:
         c.executemany("INSERT INTO klienti VALUES (NULL, ?, ?, ?, ?, ?)", [
@@ -42,7 +40,7 @@ def ensure_db():
             ("BetonBau a.s.", "Praha, K Hájům 22", "87654321", 5, "Alena Nová"),
         ])
 
-    # Stroje – jen když je prázdno
+    # Naplnění strojů (pouze při prázdné tabulce)
     c.execute("SELECT COUNT(*) FROM stroje")
     if c.fetchone()[0] == 0:
         c.executemany("INSERT INTO stroje VALUES (?, ?, ?)", [
@@ -66,84 +64,61 @@ def ensure_db():
     conn.commit()
     conn.close()
 
-# zavolat hned po startu
+def safe_read_sql(query: str) -> pd.DataFrame:
+    """Provede SELECT; když chybí tabulky/DB, vytvoří je a dotaz zopakuje."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        return df
+    except sqlite3.OperationalError:
+        # Vytvoř DB/tabulky a zkus znovu
+        ensure_db()
+        conn = sqlite3.connect(DB_PATH)
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        return df
+
+# Vytvoř DB (pro jistotu) hned po startu
 ensure_db()
 
-# ====== STYLY (jednoduché, stabilní) ======
+# ================== STYLY (zkrácené, stabilní) ==================
 st.markdown("""
 <style>
-/* tmavé inputy */
-input, textarea {
-  background-color:#151515 !important;
-  color:#f5f5f5 !important;
-  border-radius:10px !important;
-  border:1px solid #333 !important;
-}
-div[data-testid="stNumberInput"] input {
-  background-color:#151515 !important;
-  color:#f5f5f5 !important;
-  border:1px solid #333 !important;
-  font-weight:600 !important;
-}
+/* Tmavé inputy */
+input, textarea { background:#151515 !important; color:#f5f5f5 !important; border-radius:10px !important; border:1px solid #333 !important; }
+div[data-testid="stNumberInput"] input { background:#151515 !important; color:#f5f5f5 !important; border:1px solid #333 !important; font-weight:600 !important; }
 
-/* select / multiselect */
+/* Select / MultiSelect */
 .stMultiSelect div[data-baseweb="select"] > div,
-.stSelectbox   div[data-baseweb="select"] > div {
-  background-color:#151515 !important;
-  color:#f5f5f5 !important;
-  border-radius:10px !important;
-  border:1px solid #333 !important;
-}
-.stMultiSelect div[data-baseweb="select"] span,
-.stSelectbox   div[data-baseweb="select"] span {
-  color:#f5f5f5 !important;
-}
+.stSelectbox   div[data-baseweb="select"] > div { background:#151515 !important; color:#f5f5f5 !important; border-radius:10px !important; border:1px solid #333 !important; }
+.stMultiSelect div[data-baseweb="select"] span, .stSelectbox div[data-baseweb="select"] span { color:#f5f5f5 !important; }
 
-/* TAGY v multiselectu – tyrkys, bílý text/křížek (vyšší specificita) */
-.stApp .stMultiSelect div[data-baseweb="tag"]{
-  background:#06b6d4 !important;  /* cyan-500 */
-  color:#ffffff !important;
-  border:0 !important;
-  border-radius:10px !important;
-  box-shadow:0 2px 8px rgba(6,182,212,.35);
-}
+/* TAGY v multiselectu (už žádná červená) */
+.stApp .stMultiSelect div[data-baseweb="tag"]{ background:#06b6d4 !important; color:#ffffff !important; border:0 !important; border-radius:10px !important; box-shadow:0 2px 8px rgba(6,182,212,.35); }
 .stApp .stMultiSelect div[data-baseweb="tag"]:hover{ background:#22d3ee !important; }
-.stApp .stMultiSelect div[data-baseweb="tag"] svg,
-.stApp .stMultiSelect div[data-baseweb="tag"] path{ fill:#ffffff !important; color:#ffffff !important; }
+.stApp .stMultiSelect div[data-baseweb="tag"] svg, .stApp .stMultiSelect div[data-baseweb="tag"] path{ fill:#ffffff !important; color:#ffffff !important; }
 
-/* metriky – lehké zvýraznění */
-[data-testid="stMetric"]{
-  background:rgba(255,255,255,.06);
-  border:1px solid rgba(255,255,255,.12);
-  border-radius:12px; padding:.6rem .8rem;
-}
+/* Metriky */
+[data-testid="stMetric"]{ background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:.6rem .8rem; }
 
-/* pojistka – schovej progress/slidery, kdyby je Streamlit vyrenderoval */
-div[role="slider"], div[role="progressbar"], input[type="range"],
-.stSlider, [data-testid="stSlider"], .stProgress, [data-testid="stProgress"], [data-testid="stProgressBar"]{
-  display:none !important; height:0 !important; opacity:0 !important; overflow:hidden !important;
-}
+/* Pojistka: skryj případné progress/slidery */
+div[role="slider"], div[role="progressbar"], input[type="range"], .stSlider, [data-testid="stSlider"], .stProgress, [data-testid="stProgress"], [data-testid="stProgressBar"]{ display:none !important; height:0 !important; opacity:0 !important; overflow:hidden !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ====== DB HELPERS ======
+# ================== DB LOADERS ==================
 def nacti_klienty():
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query("SELECT * FROM klienti", conn)
-    conn.close()
-    return df
+    return safe_read_sql("SELECT * FROM klienti")
 
 def nacti_stroje():
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query("SELECT * FROM stroje", conn)
-    conn.close()
-    return df
+    return safe_read_sql("SELECT * FROM stroje")
 
-# ====== DATA ======
+# ================== DATA ==================
 klienti = nacti_klienty()
 stroje  = nacti_stroje()
 
-# ====== UI ======
+# ================== UI ==================
 st.title("🛠️ Půjčovna strojů")
 st.caption("Vyber klienta a stroje pro rychlý výpočet ceny pronájmu.")
 
@@ -177,16 +152,12 @@ if vybrane_stroje:
         st.divider()
 
     if st.button("💰 Spočítat celkovou cenu", use_container_width=True):
-        celkova = sum(
-            float(stroje.loc[stroje["nazev"] == s, "cena_den"].values[0]) * dny
-            for s, dny in dny_dict.items()
-        )
+        celkova = sum(float(stroje.loc[stroje["nazev"] == s, "cena_den"].values[0]) * dny
+                      for s, dny in dny_dict.items())
         po_sleve = celkova * (1 - sleva/100)
 
         c1, c2 = st.columns(2)
-        with c1:
-            st.metric("💵 Cena bez slevy", f"{celkova:,.2f} Kč")
-        with c2:
-            st.metric("✅ Cena se slevou", f"{po_sleve:,.2f} Kč", delta=f"-{celkova - po_sleve:,.2f} Kč")
+        with c1: st.metric("💵 Cena bez slevy", f"{celkova:,.2f} Kč")
+        with c2: st.metric("✅ Cena se slevou", f"{po_sleve:,.2f} Kč", delta=f"-{celkova - po_sleve:,.2f} Kč")
 else:
     st.info("👆 Vyber alespoň jeden stroj pro výpočet ceny pronájmu.")
