@@ -75,9 +75,6 @@ def safe_read_sql(sql: str) -> pd.DataFrame:
         ensure_db(conn)
         return pd.read_sql_query(sql, conn)
 
-ensure_db(get_conn())
-st.write("✅ Databáze připravena:", DB_PATH)
-
 # ================== Styly ==================
 st.markdown("""
 <style>
