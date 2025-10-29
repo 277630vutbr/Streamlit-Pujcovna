@@ -3,9 +3,11 @@ import sqlite3
 import pandas as pd
 from pathlib import Path
 
+# ================== Nastavení aplikace ==================
 st.set_page_config(page_title="Půjčovna strojů", page_icon="🛠️", layout="centered")
+st.write("🔧 Spouštím aplikaci...")
 
-# ================= DB: stabilní nastavení =================
+# ================== Databáze ==================
 DB_DIR = Path.home() / ".pujcovna_data"
 DB_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DB_DIR / "pujcovna.db"
@@ -14,17 +16,17 @@ DB_PATH = DB_DIR / "pujcovna.db"
 def get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(
         str(DB_PATH),
-        check_same_thread=False,  # sdílení spojení přes vlákna
-        timeout=30                # vyčkej, když je DB zamčená
+        check_same_thread=False,
+        timeout=30
     )
     cur = conn.cursor()
-    cur.execute("PRAGMA journal_mode=WAL;")     # stabilnější paralelní přístup
+    cur.execute("PRAGMA journal_mode=WAL;")
     cur.execute("PRAGMA synchronous=NORMAL;")
-    cur.execute("PRAGMA busy_timeout=30000;")   # 30 s
+    cur.execute("PRAGMA busy_timeout=30000;")
     conn.commit()
     return conn
 
-def ensure_db(conn: sqlite3.Connection) -> None:
+def ensure_db(conn: sqlite3.Connection):
     c = conn.cursor()
     c.execute("""
     CREATE TABLE IF NOT EXISTS klienti (
@@ -41,7 +43,6 @@ def ensure_db(conn: sqlite3.Connection) -> None:
         nazev TEXT,
         cena_den REAL
     )""")
-    # seed jen když prázdné
     c.execute("SELECT COUNT(*) FROM klienti")
     if c.fetchone()[0] == 0:
         c.executemany("INSERT INTO klienti VALUES (NULL, ?, ?, ?, ?, ?)", [
@@ -78,10 +79,10 @@ def safe_read_sql(sql: str) -> pd.DataFrame:
         ensure_db(conn)
         return pd.read_sql_query(sql, conn)
 
-# Init DB jednou při startu
 ensure_db(get_conn())
+st.write("✅ Databáze připravena:", DB_PATH)
 
-# ================= UI STYLY =================
+# ================== Styly ==================
 st.markdown("""
 <style>
 /* Dark inputy */
@@ -93,8 +94,7 @@ div[data-testid="stNumberInput"] input {
   background:#151515 !important; color:#f5f5f5 !important;
   border:1px solid #333 !important; font-weight:600 !important;
 }
-
-/* Select / Multiselect */
+/* Select / MultiSelect */
 .stMultiSelect div[data-baseweb="select"] > div,
 .stSelectbox   div[data-baseweb="select"] > div {
   background:#151515 !important; color:#f5f5f5 !important;
@@ -102,8 +102,7 @@ div[data-testid="stNumberInput"] input {
 }
 .stMultiSelect div[data-baseweb="select"] span,
 .stSelectbox   div[data-baseweb="select"] span { color:#f5f5f5 !important; }
-
-/* TAGY v multiselectu – tyrkys (žádná červená) */
+/* TAGY v multiselectu – tyrkys */
 .stApp .stMultiSelect div[data-baseweb="tag"]{
   background:#06b6d4 !important; color:#ffffff !important;
   border:0 !important; border-radius:10px !important;
@@ -112,8 +111,7 @@ div[data-testid="stNumberInput"] input {
 .stApp .stMultiSelect div[data-baseweb="tag"]:hover{ background:#22d3ee !important; }
 .stApp .stMultiSelect div[data-baseweb="tag"] svg,
 .stApp .stMultiSelect div[data-baseweb="tag"] path{ fill:#ffffff !important; color:#ffffff !important; }
-
-/* Metriky – jemné orámování */
+/* Metriky */
 [data-testid="stMetric"]{
   background:rgba(255,255,255,.06);
   border:1px solid rgba(255,255,255,.12);
@@ -122,17 +120,14 @@ div[data-testid="stNumberInput"] input {
 </style>
 """, unsafe_allow_html=True)
 
-# ================= DATA LOADERY =================
-def nacti_klienty() -> pd.DataFrame:
-    return safe_read_sql("SELECT * FROM klienti")
-
-def nacti_stroje() -> pd.DataFrame:
-    return safe_read_sql("SELECT * FROM stroje")
+# ================== Načtení dat ==================
+def nacti_klienty(): return safe_read_sql("SELECT * FROM klienti")
+def nacti_stroje():  return safe_read_sql("SELECT * FROM stroje")
 
 klienti = nacti_klienty()
 stroje  = nacti_stroje()
 
-# ================= APLIKACE =================
+# ================== UI ==================
 st.title("🛠️ Půjčovna strojů")
 st.caption("Vyber klienta a stroje pro rychlý výpočet ceny pronájmu.")
 
@@ -153,16 +148,16 @@ if vybrane_stroje:
     dny_dict = {}
     for stroj in vybrane_stroje:
         cena = float(stroje.loc[stroje["nazev"] == stroj, "cena_den"].values[0])
-        col1, col2, col3 = st.columns([3, 2, 1], vertical_alignment="center")
+        col1, col2, col3 = st.columns([3, 2, 1])
         with col1:
             st.markdown(f"**{stroj}**")
         with col2:
             st.caption(f"{cena:,.2f} Kč / den")
         with col3:
-            dny_dict[stroj] = st.number_input(
-                "Počet dní", min_value=1, max_value=365, value=1,
-                key=stroj, label_visibility="collapsed"
-            )
+            dny_dict[stroj] = st.number_input("Počet dní",
+                                              min_value=1, max_value=365,
+                                              value=1, key=stroj,
+                                              label_visibility="collapsed")
         st.divider()
 
     if st.button("💰 Spočítat celkovou cenu", use_container_width=True):
