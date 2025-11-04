@@ -3,7 +3,10 @@ import sqlite3
 import pandas as pd
 from pathlib import Path
 
-# ================== Databáze ==================
+# ================== Nastavení aplikace ==================
+st.set_page_config(page_title="Půjčovna strojů", page_icon="🛠️", layout="centered")
+
+# ================== Databáze (stabilní nastavení) ==================
 DB_DIR = Path.home() / ".pujcovna_data"
 DB_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DB_DIR / "pujcovna.db"
@@ -22,8 +25,9 @@ def get_conn() -> sqlite3.Connection:
     conn.commit()
     return conn
 
-def ensure_db(conn: sqlite3.Connection):
+def ensure_db(conn: sqlite3.Connection) -> None:
     c = conn.cursor()
+    # Tabulky
     c.execute("""
     CREATE TABLE IF NOT EXISTS klienti (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,6 +43,7 @@ def ensure_db(conn: sqlite3.Connection):
         nazev TEXT,
         cena_den REAL
     )""")
+    # Seed jen když prázdné
     c.execute("SELECT COUNT(*) FROM klienti")
     if c.fetchone()[0] == 0:
         c.executemany("INSERT INTO klienti VALUES (NULL, ?, ?, ?, ?, ?)", [
@@ -68,17 +73,25 @@ def ensure_db(conn: sqlite3.Connection):
     conn.commit()
 
 def safe_read_sql(sql: str) -> pd.DataFrame:
+    """SELECT s pojistkou – na 'no such table' oprav DB a zopakuj dotaz."""
     conn = get_conn()
     try:
         return pd.read_sql_query(sql, conn)
-    except sqlite3.OperationalError:
-        ensure_db(conn)
-        return pd.read_sql_query(sql, conn)
+    except Exception as e:
+        msg = str(e).lower()
+        if "no such table" in msg or "no such column" in msg:
+            ensure_db(conn)
+            return pd.read_sql_query(sql, conn)
+        # kdyby to byla jiná chyba, ukaž ji v UI a zahoď srozumitelně
+        st.error(f"Chyba DB: {e}")
+        raise
 
-# ================== Styly ==================
+# Inicializace při startu
+ensure_db(get_conn())
+
+# ================== Styly (jen nutné) ==================
 st.markdown("""
 <style>
-/* Dark inputy */
 input, textarea {
   background:#151515 !important; color:#f5f5f5 !important;
   border-radius:10px !important; border:1px solid #333 !important;
@@ -87,7 +100,6 @@ div[data-testid="stNumberInput"] input {
   background:#151515 !important; color:#f5f5f5 !important;
   border:1px solid #333 !important; font-weight:600 !important;
 }
-/* Select / MultiSelect */
 .stMultiSelect div[data-baseweb="select"] > div,
 .stSelectbox   div[data-baseweb="select"] > div {
   background:#151515 !important; color:#f5f5f5 !important;
@@ -95,7 +107,6 @@ div[data-testid="stNumberInput"] input {
 }
 .stMultiSelect div[data-baseweb="select"] span,
 .stSelectbox   div[data-baseweb="select"] span { color:#f5f5f5 !important; }
-/* TAGY v multiselectu – tyrkys */
 .stApp .stMultiSelect div[data-baseweb="tag"]{
   background:#06b6d4 !important; color:#ffffff !important;
   border:0 !important; border-radius:10px !important;
@@ -104,7 +115,6 @@ div[data-testid="stNumberInput"] input {
 .stApp .stMultiSelect div[data-baseweb="tag"]:hover{ background:#22d3ee !important; }
 .stApp .stMultiSelect div[data-baseweb="tag"] svg,
 .stApp .stMultiSelect div[data-baseweb="tag"] path{ fill:#ffffff !important; color:#ffffff !important; }
-/* Metriky */
 [data-testid="stMetric"]{
   background:rgba(255,255,255,.06);
   border:1px solid rgba(255,255,255,.12);
@@ -112,6 +122,13 @@ div[data-testid="stNumberInput"] input {
 }
 </style>
 """, unsafe_allow_html=True)
+
+# ================== Sidebar: rychlá oprava DB ==================
+with st.sidebar:
+    st.header("⚙️ Správa")
+    if st.button("🔁 Opravit DB (znovu vytvořit tabulky)"):
+        ensure_db(get_conn())
+        st.success("DB zkontrolována / doplněna.")
 
 # ================== Načtení dat ==================
 def nacti_klienty(): return safe_read_sql("SELECT * FROM klienti")
